@@ -1,7 +1,67 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../utils/ApiError.js"
+import { User } from "../models/user.model.js";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 
-export const registerUser = asyncHandler(async (req, res) => {
-    res.status(200).json({
-        message: "ok"
+export const registerUser = asyncHandler(async (req, res, next) => {
+    //get user details from frontend
+    //validation - not empty
+    //check if user already exists - username, email
+    //check for files - avatar(required), coverImage
+    //upload them to cloudinary, avatar
+    //create user object - create entry in DB
+    //remove password and response token from response
+    //check for user creation - return response
+
+
+    const { username, fullName ,email, password } = req.body
+    if(!username || !fullName || !email || !password) {
+        throw new ApiError(400, "Please provide all the field")
+    }
+
+    const existingUser = await User.findOne({
+        $or: [{ username }, { email }]
     })
+
+    if(existingUser) {
+        throw new ApiError(409, "User already exits")
+    }
+
+    //first property is object
+    const avatarLocalPath = req.files?.avatar[0]?.path
+    const coverImageLocalPath = req.files?.coverImage[0]?.path
+
+    if(!avatarLocalPath) {
+        throw new ApiError(409, "Please provide avatar")
+    }
+
+    const avatar = await uploadOnCloudinary(avatarLocalPath)
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+
+    if(!avatar) {
+        throw new ApiError(409, "Please provide avatar")
+    }
+
+    const user = await User.create({
+        username: username.toLowerCase(),
+        fullName,
+        password,
+        email,
+        avatar: avatar.url,
+        coverImage: coverImage?.url || ""
+    })
+
+    const createdUser = await User.findById(user._id).select(
+        "-password -refreshToken"
+    )
+
+    if(!createdUser) {
+        throw new ApiError(500, "Something went wrong while creating the user")
+    }
+
+    return res.status(201).json(
+        new ApiResponse(201, createdUser, "User registered Successfully")
+    )
+
 })
